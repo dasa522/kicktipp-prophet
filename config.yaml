@@ -1,0 +1,15 @@
+# Kicktipp community name (from URL: kicktipp.de/<community>/tippabgabe)
+community: "lovers"
+
+# Which prediction model to use
+model: "poisson"
+
+# Model-specific settings
+poisson:
+  shrinkage_k: 1.5
+  max_goals: 12
+
+# Data settings
+data:
+  seasons:
+    - "2526"
