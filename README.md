@@ -105,9 +105,10 @@ kicktipp-predictor/
 
 ## Available Models
 
-| Model | Description | Config Key |
-|-------|-------------|------------|
-| **Poisson** | Poisson regression with venue-aware attack/defense strengths | `poisson` |
+| Model         | Description                                               | Config Key    |
+|---------------|----------------------------------------------------------|--------------|
+| **Poisson**   | Poisson regression with venue-aware attack/defense strengths | `poisson`    |
+| **Dixon-Coles** | Time-decayed Poisson with correlation for low scores (draws, 0-0, 1-0, 0-1) | `dixonColes` |
 
 ### Poisson Model
 
@@ -116,16 +117,13 @@ The default model uses [Poisson regression](https://en.wikipedia.org/wiki/Poisso
 1. **Calculates team strengths** from historical data:
    - Attack strength (home/away)
    - Defense strength (home/away)
-
 2. **Applies shrinkage** to handle teams with few games
-
 3. **Predicts expected goals** using:
    ```
    λ_home = AttackStrengthHome × (1 / DefenseStrengthAway) × LeagueAvgHomeGoals
    λ_away = AttackStrengthAway × (1 / DefenseStrengthHome) × LeagueAvgAwayGoals
    ```
-
-4. **Finds most probable score** by maximizing `P(home=i) × P(away=j)`
+4. **Finds most probable score** by maximizing $P(\text{home}=i) \times P(\text{away}=j)$
 
 #### Configuration
 
@@ -134,6 +132,43 @@ poisson:
   shrinkage_k: 1.5    # Higher = more regression to mean (good for early season)
   max_goals: 12       # Maximum goals to consider per team
 ```
+
+### Dixon-Coles Model
+
+The [Dixon-Coles model](https://www.sportingintelligence.com/wp-content/uploads/2010/08/Dixon-Coles-1997.pdf) is an extension of Poisson regression that:
+
+- **Adds a correlation parameter ($\rho$)** to better model low-scoring draws and upsets
+- **Uses time decay** so recent matches have more influence
+- **Regularizes parameters** to avoid overfitting
+
+#### Configuration
+
+```yaml
+dixonColes:
+  time_decay_alpha: 0.001      # How quickly older matches lose influence
+  regularization_lambda: 0.01  # L2 penalty strength for parameter shrinkage
+  max_goals: 12                # Maximum goals to consider per team
+```
+
+#### How it works
+
+- Optimizes attack/defense strengths, home advantage, and $\rho$ using maximum likelihood
+- Predicts the most probable score using the adjusted joint probability
+
+#### Usage
+
+To use Dixon-Coles, set in your `config.yaml`:
+
+```yaml
+model: "dixonColes"
+
+dixonColes:
+  time_decay_alpha: 0.001
+  regularization_lambda: 0.01
+  max_goals: 12
+```
+
+---
 
 ## Adding Your Own Model
 

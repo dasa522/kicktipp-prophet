@@ -30,31 +30,43 @@ class PoissonModel(PredictionModel):
     
     name = "poisson"
     
-    def __init__(self, shrinkage_k: float = 1.5, max_goals: int = 12):
+    def __init__(self, shrinkage_k: float = 1.5, max_goals: int = 12, time_decay_alpha:float = 0.001):
         self.k = shrinkage_k
         self.max_goals = max_goals
         self.teams = None
         self.avg_home = None
         self.avg_away = None
+        self.time_decay_alpha = time_decay_alpha
     
     def fit(self, df: pd.DataFrame) -> None:
         """Compute team strengths from historical match data."""
+        #avoid error because we add age_in_days 
+        df = df.copy()
+        most_recent_date =df['Date'].max()
+        #create new field age_in_days for decay
+        df['age_in_days'] = (most_recent_date - df['Date']).dt.days
+        #apply decay 
+        df['weight'] = np.exp(-self.time_decay_alpha* df['age_in_days'])
+        #weighted goals
+        df['wFTHG'] = df['FTHG'] * df['weight']
+        df['wFTAG'] = df['FTAG'] * df['weight']
+
         # Aggregate goals and games
         home = df.groupby('HomeTeam').agg(
-            HGF=('FTHG', 'sum'), HGA=('FTAG', 'sum'), HG=('HomeTeam', 'size')
+            HGF=('wFTHG', 'sum'), HGA=('wFTAG', 'sum'), HG=('weight', 'sum')
         )
         away = df.groupby('AwayTeam').agg(
-            AGF=('FTAG', 'sum'), AGA=('FTHG', 'sum'), AG=('AwayTeam', 'size')
+            AGF=('wFTAG', 'sum'), AGA=('wFTHG', 'sum'), AG=('weight', 'sum')
         )
-        
         teams = home.join(away, how='outer').fillna(0)
         teams['GF'] = teams['HGF'] + teams['AGF']
         teams['GA'] = teams['HGA'] + teams['AGA']
         teams['G'] = teams['HG'] + teams['AG']
         
         # League baselines
-        self.avg_home = df['FTHG'].mean()
-        self.avg_away = df['FTAG'].mean()
+        total_weight = df['weight'].sum()
+        self.avg_home = df['wFTHG'].sum()/total_weight
+        self.avg_away = df['wFTAG'].sum()/total_weight
         
         # Rates
         teams['rate_overall_scored'] = teams['GF'] / teams['G']
@@ -87,17 +99,6 @@ class PoissonModel(PredictionModel):
         
         self.teams = teams
     
-    def _normalize_team(self, name: str) -> str:
-        """Map Kicktipp team names to football-data names."""
-        n = NAME_MAP.get(name, name)
-        if n in self.teams.index:
-            return n
-        import unicodedata, re
-        s = unicodedata.normalize('NFKD', n).encode('ascii', 'ignore').decode('ascii')
-        s = re.sub(r"[.']", "", s).strip()
-        if s in self.teams.index:
-            return s
-        raise KeyError(f"Team not found: {name} -> {n}")
     
     def predict(self, home_team: str, away_team: str) -> tuple[int, int]:
         """Predict most likely score for a match."""
